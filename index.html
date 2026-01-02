@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedPass - Seu Passômetro Digital</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .sidebar { background: #2c3e50; color: white; min-height: 100vh; }
+        .patient-card { cursor: pointer; transition: 0.3s; border-left: 5px solid #3498db; }
+        .patient-card:hover { background-color: #e9ecef; }
+        .active-patient { background-color: #d1ecf1 !important; border-left-color: #0c5460; }
+        .tab-content { background: white; padding: 20px; border-radius: 0 0 10px 10px; border: 1px solid #dee2e6; border-top: none; }
+        .done { text-decoration: line-through; color: #6c757d; }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid">
+    <div class="row">
+        <nav class="col-md-3 col-lg-2 d-md-block sidebar p-3">
+            <h4 class="mb-4">🩺 MedPass</h4>
+            <button class="btn btn-primary w-100 mb-3" onclick="createNewPatient()">+ Novo Paciente</button>
+            <div id="patientList" class="list-group">
+                </div>
+        </nav>
+
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
+            <div id="welcomeMessage" class="text-center mt-5">
+                <h3>Selecione ou crie um paciente para começar.</h3>
+                <p class="text-muted">Dados salvos localmente no seu navegador.</p>
+            </div>
+
+            <div id="patientEditor" class="d-none">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 id="displayPatientName">Nome do Paciente</h2>
+                    <div>
+                        <button class="btn btn-danger me-2" onclick="deleteCurrentPatient()">Excluir</button>
+                        <button class="btn btn-success" onclick="saveData()">💾 Salvar Dados</button>
+                    </div>
+                </div>
+
+                <ul class="nav nav-tabs" id="patientTabs" role="tablist">
+                    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#info">Info</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#diagnosticos">Diagnósticos/Meds</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#antecedentes">Antecedentes</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#pendencias">Pendências</button></li>
+                    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#programacao">Programação</button></li>
+                </ul>
+
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="info">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label>Nome Completo</label>
+                                <input type="text" id="pName" class="form-control" oninput="updateDisplayName()">
+                            </div>
+                            <div class="col-md-3">
+                                <label>Data de Nasc.</label>
+                                <input type="date" id="pDob" class="form-control" onchange="calculateAge()">
+                            </div>
+                            <div class="col-md-1">
+                                <label>Idade</label>
+                                <input type="text" id="pAge" class="form-control" disabled>
+                            </div>
+                            <div class="col-md-2">
+                                <label>Peso (kg)</label>
+                                <input type="number" id="pWeight" class="form-control">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="diagnosticos">
+                        <h5>Diagnósticos Atuais</h5>
+                        <div id="currentDiagContainer"></div>
+                        <button class="btn btn-sm btn-outline-primary mb-4" onclick="addDiagnosis('current')">+ Add Diagnóstico Atual</button>
+                        
+                        <h5>Diagnósticos Prévios</h5>
+                        <div id="previousDiagContainer"></div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="addDiagnosis('previous')">+ Add Diagnóstico Prévio</button>
+                    </div>
+
+                    <div class="tab-pane fade" id="antecedentes">
+                        <h5>Medicamentos de Uso Contínuo/Antecedentes</h5>
+                        <div id="historyMedsContainer"></div>
+                        <button class="btn btn-sm btn-outline-primary" onclick="addHistoryMed()">+ Add Medicamento</button>
+                    </div>
+
+                    <div class="tab-pane fade" id="pendencias">
+                        <div class="input-group mb-3">
+                            <input type="text" id="newPendencia" class="form-control" placeholder="Nova pendência...">
+                            <button class="btn btn-primary" onclick="addItem('pendencias')">Adicionar</button>
+                        </div>
+                        <ul id="pendenciasList" class="list-group"></ul>
+                    </div>
+
+                    <div class="tab-pane fade" id="programacao">
+                        <div class="input-group mb-3">
+                            <input type="text" id="newProgramacao" class="form-control" placeholder="Nova programação...">
+                            <button class="btn btn-primary" onclick="addItem('programacao')">Adicionar</button>
+                        </div>
+                        <ul id="programacaoList" class="list-group"></ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    let patients = JSON.parse(localStorage.getItem('medpass_data')) || [];
+    let currentPatientId = null;
+
+    // --- Lógica de Inicialização ---
+    function renderPatientList() {
+        const list = document.getElementById('patientList');
+        list.innerHTML = '';
+        patients.forEach(p => {
+            const activeClass = p.id === currentPatientId ? 'active-patient' : '';
+            list.innerHTML += `<button onclick="loadPatient(${p.id})" class="list-group-item list-group-item-action patient-card ${activeClass}">${p.name || 'Sem nome'}</button>`;
+        });
+    }
+
+    function createNewPatient() {
+        const newP = {
+            id: Date.now(),
+            name: 'Novo Paciente',
+            dob: '',
+            weight: '',
+            diagnoses: { current: [], previous: [] },
+            historyMeds: [],
+            pendencias: [],
+            programacao: []
+        };
+        patients.push(newP);
+        saveToLocalStorage();
+        loadPatient(newP.id);
+    }
+
+    function loadPatient(id) {
+        currentPatientId = id;
+        const p = patients.find(p => p.id === id);
+        document.getElementById('welcomeMessage').classList.add('d-none');
+        document.getElementById('patientEditor').classList.remove('d-none');
+        
+        // Preencher Campos Básicos
+        document.getElementById('pName').value = p.name;
+        document.getElementById('pDob').value = p.dob;
+        document.getElementById('pWeight').value = p.weight;
+        updateDisplayName();
+        calculateAge();
+
+        // Renderizar Listas Dinâmicas
+        renderDiagnoses('current', p.diagnoses.current);
+        renderDiagnoses('previous', p.diagnoses.previous);
+        renderHistoryMeds(p.historyMeds);
+        renderChecklist('pendencias', p.pendencias);
+        renderChecklist('programacao', p.programacao);
+        renderPatientList();
+    }
+
+    // --- Cálculos e Updates ---
+    function calculateAge() {
+        const dob = document.getElementById('pDob').value;
+        if (!dob) return;
+        const birthDate = new Date(dob);
+        const today = new Date();
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const m = today.getMonth() - birthDate.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+        document.getElementById('pAge').value = age;
+    }
+
+    function updateDisplayName() {
+        document.getElementById('displayPatientName').innerText = document.getElementById('pName').value || 'Sem nome';
+    }
+
+    // --- Gerenciamento de Diagnósticos e Medicamentos ---
+    function renderDiagnoses(type, list) {
+        const container = document.getElementById(`${type}DiagContainer`);
+        container.innerHTML = '';
+        list.forEach((diag, idx) => {
+            container.innerHTML += `
+                <div class="card mb-2 p-2 bg-light">
+                    <div class="input-group mb-1">
+                        <input type="text" class="form-control form-control-sm" placeholder="Diagnóstico" value="${diag.name}" onchange="updateDiagName('${type}', ${idx}, this.value)">
+                        <button class="btn btn-outline-danger btn-sm" onclick="removeDiag('${type}', ${idx})">X</button>
+                    </div>
+                    <textarea class="form-control form-control-sm" placeholder="Medicamentos vinculados..." onchange="updateDiagMeds('${type}', ${idx}, this.value)">${diag.meds}</textarea>
+                </div>`;
+        });
+    }
+
+    function addDiagnosis(type) {
+        const p = patients.find(p => p.id === currentPatientId);
+        p.diagnoses[type].push({ name: '', meds: '' });
+        renderDiagnoses(type, p.diagnoses[type]);
+    }
+
+    function updateDiagName(type, idx, val) { patients.find(p => p.id === currentPatientId).diagnoses[type][idx].name = val; }
+    function updateDiagMeds(type, idx, val) { patients.find(p => p.id === currentPatientId).diagnoses[type][idx].meds = val; }
+    function removeDiag(type, idx) {
+        patients.find(p => p.id === currentPatientId).diagnoses[type].splice(idx, 1);
+        renderDiagnoses(type, patients.find(p => p.id === currentPatientId).diagnoses[type]);
+    }
+
+    // --- Antecedentes / Meds Avulsas ---
+    function renderHistoryMeds(list) {
+        const container = document.getElementById('historyMedsContainer');
+        container.innerHTML = '';
+        list.forEach((med, idx) => {
+            container.innerHTML += `
+                <div class="input-group mb-1">
+                    <input type="text" class="form-control" value="${med}" onchange="updateHistoryMed(${idx}, this.value)">
+                    <button class="btn btn-outline-danger" onclick="removeHistoryMed(${idx})">X</button>
+                </div>`;
+        });
+    }
+
+    function addHistoryMed() {
+        const p = patients.find(p => p.id === currentPatientId);
+        p.historyMeds.push('');
+        renderHistoryMeds(p.historyMeds);
+    }
+
+    function updateHistoryMed(idx, val) { patients.find(p => p.id === currentPatientId).historyMeds[idx] = val; }
+    function removeHistoryMed(idx) {
+        patients.find(p => p.id === currentPatientId).historyMeds.splice(idx, 1);
+        renderHistoryMeds(patients.find(p => p.id === currentPatientId).historyMeds);
+    }
+
+    // --- Pendências e Programação (Checklists) ---
+    function renderChecklist(type, list) {
+        const container = document.getElementById(`${type}List`);
+        container.innerHTML = '';
+        list.forEach((item, idx) => {
+            container.innerHTML += `
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <input type="checkbox" class="form-check-input me-2" ${item.done ? 'checked' : ''} onclick="toggleItem('${type}', ${idx})">
+                        <span class="${item.done ? 'done' : ''}">${item.text}</span>
+                    </div>
+                    <button class="btn btn-sm text-danger" onclick="removeItem('${type}', ${idx})">Excluir</button>
+                </li>`;
+        });
+    }
+
+    function addItem(type) {
+        const input = document.getElementById(`new${type.charAt(0).toUpperCase() + type.slice(1)}`);
+        if (!input.value) return;
+        const p = patients.find(p => p.id === currentPatientId);
+        p[type].push({ text: input.value, done: false });
+        input.value = '';
+        renderChecklist(type, p[type]);
+    }
+
+    function toggleItem(type, idx) {
+        const p = patients.find(p => p.id === currentPatientId);
+        p[type][idx].done = !p[type][idx].done;
+        renderChecklist(type, p[type]);
+    }
+
+    function removeItem(type, idx) {
+        const p = patients.find(p => p.id === currentPatientId);
+        p[type].splice(idx, 1);
+        renderChecklist(type, p[type]);
+    }
+
+    // --- Persistência ---
+    function saveData() {
+        const p = patients.find(p => p.id === currentPatientId);
+        p.name = document.getElementById('pName').value;
+        p.dob = document.getElementById('pDob').value;
+        p.weight = document.getElementById('pWeight').value;
+        saveToLocalStorage();
+        alert('Dados salvos com sucesso!');
+        renderPatientList();
+    }
+
+    function saveToLocalStorage() {
+        localStorage.setItem('medpass_data', JSON.stringify(patients));
+    }
+
+    function deleteCurrentPatient() {
+        if(confirm("Deseja realmente excluir este paciente?")) {
+            patients = patients.filter(p => p.id !== currentPatientId);
+            saveToLocalStorage();
+            location.reload();
+        }
+    }
+
+    // Início
+    renderPatientList();
+</script>
+
+</body>
+</html>
